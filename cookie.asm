@@ -19,7 +19,6 @@ DATASEG
 	nextSecondToCursor db 0
 		CursorSeconds equ 5
 	cursorPrice dw 15
-		CursorIncPrice equ 3
 	
 	priceText db '     |$'
 	divider db 10, '------------------', 10, '$'
@@ -401,8 +400,22 @@ CursorBuy:
 	ja GoBackTo
 	sub [cookies], ax
 	inc [cursor]
-	add [word ptr cursorPrice], CursorIncPrice
-	mov ah, 2Ch
+	
+	;calcs how much to add to the price according to the OG game
+	mov ax, [cursorPrice]
+	mov bl, 10
+	div bl
+	cmp ah, 0
+	je noAddToResult
+	inc al
+	xor ah, ah
+noAddToResult:
+	add [cursorPrice], ax
+	;finished calculating
+	
+	cmp [cursor], 1
+	jne GoBackTo
+	mov ah, 2Ch ;resets the time to start getting cookies for cursors
 	int 21h
 	add dh, CursorSeconds
 	mov [nextSecondToCursor], dh
