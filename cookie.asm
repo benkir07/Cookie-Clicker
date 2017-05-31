@@ -13,15 +13,22 @@ DATASEG
 	NumArr db 5 dup (0)
 	string db 'Cookies:$'
 	
-	cursorText1 db '|Cursor:$'
-	cursorText2 db '    |', 10, '|auto clicks once|',10, '|every 5 seconds |', 10, '|Price:$'
+	cursorText1 db 10, '|Cursor:$'
+	cursorText2 db '    |', 10, '|Autoclicks every|',10, '|5 seconds.      |', 10, '|Price:$'
 	cursor dw 0
 	nextSecondToCursor db 0
 		CursorSeconds equ 5
 	cursorPrice dw 15
 	
+	grandmaText1 db 10,'|Grandma:$'
+	grandmaText2 db '   |', 10, '|A nice grandma  |',10, '|to bake more    |', 10, '|cookies.        |', 10, '|Price:$'
+	grandma dw 0
+	nextTimeToGrandma dd 0
+		GrandmaMiliseconds equ 80
+	grandmaPrice dw 100
+	
 	priceText db '     |$'
-	divider db 10, '------------------', 10, '$'
+	divider db 10, '------------------$'
 CODESEG
 
 ;Reads Header and Palette
@@ -288,6 +295,22 @@ proc present_shop
 	mov dx, offset divider
 	int 21h
 	
+	mov ah, 9
+	mov dx, offset divider
+	int 21h
+	mov dx, offset grandmaText1
+	int 21h
+	push [grandma]
+	call print_num
+	mov dx, offset grandmaText2
+	int 21h
+	push [grandmaPrice]
+	call print_num
+	mov dx, offset priceText
+	int 21h
+	mov dx, offset divider
+	int 21h
+	
 	pop dx
 	pop bx
 	pop ax
@@ -321,6 +344,43 @@ setCursorNext:
 	mov [nextSecondToCursor], dh
 	
 noCursor:
+	cmp [grandma], 0
+	je noGrandma
+	mov ah, 2Ch
+	int 21h
+	cmp dx, [word ptr nextTimeToGrandma]
+	jb noGrandma
+	cmp cx, [word ptr nextTimeToGrandma+2]
+	jb noGrandma
+	mov ax, [grandma]
+	add [cookies], ax
+	jnc notMax3
+	mov [cookies], -1
+notMax3:
+	mov ah, 2Ch
+	int 21h
+	add dl, GrandmaMiliseconds
+	cmp dl, 100
+	jb setGrandmaNext
+	sub dl, 100
+	inc dh
+	cmp dh, 60
+	jb setGrandmaNext
+	sub dh, 60
+	inc cl
+	cmp cl, 60
+	jb setGrandmaNext
+	sub cl, 60
+	inc ch
+	cmp ch, 24
+	jb setGrandmaNext
+	sub ch, 24
+setGrandmaNext:
+	mov [word ptr nextTimeToGrandma], dx
+	mov [word ptr nextTimeToGrandma+2], cx
+
+noGrandma:
+
 	pop dx
 	pop cx
 	pop bx
@@ -385,13 +445,15 @@ waitForRelease:
 	je waitForRelease
 	cmp si, -1
 	je GoBackTo
-	;if here, click was for the shop
+	;if here, click was not cookie
 	cmp cx, 011Ch
 	ja GoBackTo
 	cmp dx, 000Bh
 	jb GoBackTo
 	cmp dx, 0037h
 	jb CursorBuy
+	cmp dx, 006Fh
+	jb GrandmaBuy
 	jmp GoBackTo
 	
 CursorBuy:
@@ -400,13 +462,16 @@ CursorBuy:
 	ja GoBackTo
 	sub [cookies], ax
 	inc [cursor]
-	
+	jc MaxCursor
 	;calcs how much to add to the price according to the OG game
 	mov ax, [cursorPrice]
 	mov bl, 10
 	div bl
+	cmp al, 10
+	jae priceHigherThan100
 	cmp ah, 0
 	je noAddToResult
+priceHigherThan100:
 	inc al
 	xor ah, ah
 noAddToResult:
@@ -423,7 +488,60 @@ noAddToResult:
 	jbe GoBackTo
 	sub [nextSecondToCursor], 60
 	jmp GoBackTo
-
+	
+MaxCursor:
+	mov [cursor], -1
+	jmp GoBackTo
+	
+	
+GrandmaBuy:
+	mov ax, [grandmaPrice]
+	cmp ax, [cookies]
+	ja GoBackTo
+	sub [cookies], ax
+	inc [grandma]
+	jc MaxGrandma
+	
+	;calcs how much to add to the price according to the OG game
+	mov ax, [grandmaPrice]
+	mov bl, 10
+	div bl
+	inc al
+	xor ah, ah
+	add [grandmaPrice], ax
+	;finished calculating
+	
+	cmp [grandma], 1
+	jne GoBackTo
+	
+	mov ah, 2Ch ;resets the time to start getting cookies for grandmas
+	int 21h
+	add dl, GrandmaMiliseconds
+	cmp dl, 100
+	jb setGrandmaNext1
+	sub dl, 100
+	inc dh
+	cmp dh, 60
+	jb setGrandmaNext1
+	sub dh, 60
+	inc cl
+	cmp cl, 60
+	jb setGrandmaNext1
+	sub cl, 60
+	inc ch
+	cmp ch, 24
+	jb setGrandmaNext1
+	sub ch, 24
+setGrandmaNext1:
+	mov [word ptr nextTimeToGrandma], dx
+	mov [word ptr nextTimeToGrandma+2], cx
+	jmp GoBackTo
+	
+MaxGrandma:
+	mov [grandma], -1
+	jmp GoBackTo
+	
+	
 exit:
 	mov ax, 4c00h
 	int 21h
